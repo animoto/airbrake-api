@@ -175,6 +175,7 @@ module AirbrakeAPI
         notices_for_error.each do |n| 
           n.error_id = e.id
           n.error_project_id = e.project_id
+          n.environment = e.rails_env
           p = projects_by_id[n.project_id] || projects_by_id[n.error_project_id]
           if p
             n.project_name = p['name']
