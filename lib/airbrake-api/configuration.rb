@@ -8,13 +8,18 @@ module AirbrakeAPI
       :secure,
       :connection_options,
       :adapter,
-      :user_agent]
+      :user_agent,
+      :per_page,
+      :parallel_workers
+    ]
 
     attr_accessor *VALID_OPTIONS_KEYS
 
     DEFAULT_ADAPTER     = :net_http
     DEFAULT_USER_AGENT  = "AirbrakeAPI Ruby Gem #{AirbrakeAPI::VERSION}"
     DEFAULT_CONNECTION_OPTIONS = {}
+    DEFAULT_PAGE_SIZE = 20
+    DEFAULT_PARALLEL_WORKERS = 10
 
     def self.extended(base)
       base.reset
@@ -49,6 +54,8 @@ module AirbrakeAPI
       @adapter    = DEFAULT_ADAPTER
       @user_agent = DEFAULT_USER_AGENT
       @connection_options = DEFAULT_CONNECTION_OPTIONS
+      @per_path = DEFAULT_PAGE_SIZE
+      @parallel_workers = DEFAULT_PARALLEL_WORKERS
     end
 
   end

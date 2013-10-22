@@ -8,7 +8,6 @@ require 'airbrake-api/middleware/raise_response_error'
 module AirbrakeAPI
   class Client
 
-    PER_PAGE = 30
     PARALLEL_WORKERS = 10
 
     attr_accessor *AirbrakeAPI::Configuration::VALID_OPTIONS_KEYS
@@ -58,7 +57,7 @@ module AirbrakeAPI
     # errors
 
     def unformatted_error_path(error_id)
-      "/errors/#{error_id}"
+      "/groups/#{error_id}"
     end
 
     def error_path(error_id)
@@ -84,6 +83,22 @@ module AirbrakeAPI
       project_id = options.delete(:project_id)
       results = request(:get, errors_path(:project_id => project_id), options)
       results.group || results.groups
+    end
+
+    def errors_since(since, to = Time.now)
+      page = 1
+      all_errors_in_range = []
+
+      while (batch = errors(:page => page)).size != 0 do
+        in_range = batch.select { |e| (since < e.most_recent_notice_at) && (e.most_recent_notice_at <= to) }
+        all_errors_in_range += in_range
+        if in_range.size != batch.size
+          break
+        end
+        page += 1
+      end
+
+      all_errors_in_range
     end
 
     # notices
@@ -120,20 +135,69 @@ module AirbrakeAPI
           data.notices
         else
           # get info like backtraces by doing another api call to notice
-          Parallel.map(data.notices, :in_threads => PARALLEL_WORKERS) do |notice_stub|
+          Parallel.map(data.notices, :in_threads => number_of_parallel_workers) do |notice_stub|
             notice(notice_stub.id, error_id)
           end
         end
         yield batch if block_given?
         batch.each{|n| notices << n }
 
-        break if batch.size < PER_PAGE
+        break if batch.size < per_page
         page_count += 1
       end
       notices
     end
 
+    def notices_since(error_id, since, to = Time.now)
+      page = 1
+      all_notices_in_range = []
+
+      while (batch = notices(error_id, :page => page, :raw => true)).size != 0 do
+        in_range = batch.select { |n| (since < n.created_at) && (n.created_at <= to) }
+        all_notices_in_range += in_range
+        if in_range.size != batch.size
+          break
+        end
+        page += 1
+      end
+
+      all_notices_in_range
+    end
+
+    def all_notices_since(since, to=Time.now)
+      projects_by_id = projects.inject({}) { |memo, p| memo[p['id'].to_i] = p; memo }
+      errors = errors_since(since, to)
+
+      all_notices = []
+
+      errors.map do |e|
+        notices_for_error = notices_since(e.id, since, to)
+        notices_for_error.each do |n| 
+          n.error_id = e.id
+          n.error_project_id = e.project_id
+          p = projects_by_id[n.project_id] || projects_by_id[n.error_project_id]
+          if p
+            n.project_name = p['name']
+          end
+
+          n.error_class = e.error_class
+
+        end
+        all_notices += notices_for_error
+      end
+
+      all_notices
+    end
+
     private
+
+    def per_page
+      @per_page || AirbrakeAPI::Configuration::DEFAULT_PAGE_SIZE
+    end
+
+    def number_of_parallel_workers
+      @parallel_workers || AirbrakeAPI::DEFAULT_PARALLEL_WORKERS
+    end
 
     def account_path
       "#{protocol}://#{@account}.airbrake.io"
